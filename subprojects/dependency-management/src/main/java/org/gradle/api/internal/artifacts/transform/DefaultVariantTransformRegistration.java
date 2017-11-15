@@ -16,7 +16,6 @@
 
 package org.gradle.api.internal.artifacts.transform;
 
-import org.gradle.api.Transformer;
 import org.gradle.api.artifacts.transform.ArtifactTransform;
 import org.gradle.api.artifacts.transform.ArtifactTransformException;
 import org.gradle.api.artifacts.transform.VariantTransformConfigurationException;
@@ -36,7 +35,7 @@ import java.io.File;
 import java.util.Arrays;
 import java.util.List;
 
-class DefaultVariantTransformRegistration implements VariantTransformRegistry.Registration, Transformer<List<File>, File> {
+class DefaultVariantTransformRegistration implements VariantTransformRegistry.Registration, ArtifactTransformer {
     private final ImmutableAttributes from;
     private final ImmutableAttributes to;
     private final Class<? extends ArtifactTransform> implementation;
@@ -76,7 +75,7 @@ class DefaultVariantTransformRegistration implements VariantTransformRegistry.Re
         return to;
     }
 
-    public Transformer<List<File>, File> getArtifactTransform() {
+    public ArtifactTransformer getArtifactTransform() {
         return this;
     }
 
@@ -88,5 +87,15 @@ class DefaultVariantTransformRegistration implements VariantTransformRegistry.Re
         } catch (Throwable t) {
             throw new ArtifactTransformException(input, to, implementation, t);
         }
+    }
+
+    @Override
+    public boolean hasCachedResult(File input) {
+        return transformedFileCache.contains(input.getAbsoluteFile(), inputsHash);
+    }
+
+    @Override
+    public String getDisplayName() {
+        return implementation.getName();
     }
 }

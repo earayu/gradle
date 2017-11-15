@@ -17,7 +17,6 @@
 package org.gradle.api.internal.artifacts.transform;
 
 import com.google.common.collect.Maps;
-import org.gradle.api.Transformer;
 import org.gradle.api.attributes.AttributeContainer;
 import org.gradle.api.internal.artifacts.VariantTransformRegistry;
 import org.gradle.api.internal.attributes.AttributeContainerInternal;
@@ -78,16 +77,7 @@ public class VariantAttributeMatchingCache {
             }
             for (final ConsumerVariantMatchResult.ConsumerVariant inputVariant : inputVariants.getMatches()) {
                 ImmutableAttributes variantAttributes = attributesFactory.concat(inputVariant.attributes.asImmutable(), candidate.getTo().asImmutable());
-                Transformer<List<File>, File> transformer = new Transformer<List<File>, File>() {
-                    @Override
-                    public List<File> transform(File file) {
-                        List<File> result = new ArrayList<File>();
-                        for (File intermediate : inputVariant.transformer.transform(file)) {
-                            result.addAll(candidate.getArtifactTransform().transform(intermediate));
-                        }
-                        return result;
-                    }
-                };
+                ArtifactTransformer transformer = new ChainedTransformer(inputVariant, candidate);
                 result.matched(variantAttributes, transformer, inputVariant.depth + 1);
             }
         }
@@ -116,5 +106,42 @@ public class VariantAttributeMatchingCache {
     private static class AttributeSpecificCache {
         private final Map<AttributeContainer, Boolean> ignoreExtraActual = Maps.newConcurrentMap();
         private final Map<AttributeContainer, ConsumerVariantMatchResult> transforms = Maps.newConcurrentMap();
+    }
+
+    private static class ChainedTransformer implements ArtifactTransformer {
+        private final ConsumerVariantMatchResult.ConsumerVariant inputVariant;
+        private final VariantTransformRegistry.Registration candidate;
+
+        public ChainedTransformer(ConsumerVariantMatchResult.ConsumerVariant inputVariant, VariantTransformRegistry.Registration candidate) {
+            this.inputVariant = inputVariant;
+            this.candidate = candidate;
+        }
+
+        @Override
+        public List<File> transform(File file) {
+            List<File> result = new ArrayList<File>();
+            for (File intermediate : inputVariant.transformer.transform(file)) {
+                result.addAll(candidate.getArtifactTransform().transform(intermediate));
+            }
+            return result;
+        }
+
+        @Override
+        public boolean hasCachedResult(File input) {
+            if (inputVariant.transformer.hasCachedResult(input)) {
+                for (File intermediate : inputVariant.transformer.transform(input)) {
+                    if (!candidate.getArtifactTransform().hasCachedResult(intermediate)) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            return false;
+        }
+
+        @Override
+        public String getDisplayName() {
+            return inputVariant.transformer + " -> " + candidate.getArtifactTransform();
+        }
     }
 }

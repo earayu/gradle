@@ -18,7 +18,6 @@ package org.gradle.api.internal.artifacts.transform;
 
 import com.google.common.io.Files;
 import org.gradle.api.Buildable;
-import org.gradle.api.Transformer;
 import org.gradle.api.artifacts.ResolvedArtifact;
 import org.gradle.api.artifacts.component.ComponentArtifactIdentifier;
 import org.gradle.api.attributes.AttributeContainer;
@@ -132,9 +131,9 @@ public class DefaultArtifactTransforms implements ArtifactTransforms {
     private static class ConsumerProvidedResolvedVariant implements ResolvedArtifactSet {
         private final ResolvedArtifactSet delegate;
         private final AttributeContainerInternal attributes;
-        private final Transformer<List<File>, File> transform;
+        private final ArtifactTransformer transform;
 
-        ConsumerProvidedResolvedVariant(ResolvedArtifactSet delegate, AttributeContainerInternal target, Transformer<List<File>, File> transform) {
+        ConsumerProvidedResolvedVariant(ResolvedArtifactSet delegate, AttributeContainerInternal target, ArtifactTransformer transform) {
             this.delegate = delegate;
             this.attributes = target;
             this.transform = transform;
@@ -158,9 +157,9 @@ public class DefaultArtifactTransforms implements ArtifactTransforms {
             private final BuildOperationQueue<RunnableBuildOperation> actions;
             private final AsyncArtifactListener listener;
             private final Map<File, TransformFileOperation> fileResults;
-            private final Transformer<List<File>, File> transform;
+            private final ArtifactTransformer transform;
 
-            TransformingAsyncArtifactListener(Map<ResolvableArtifact, TransformArtifactOperation> artifactResults, BuildOperationQueue<RunnableBuildOperation> actions, Transformer<List<File>, File> transform, AsyncArtifactListener listener, Map<File, TransformFileOperation> fileResults) {
+            TransformingAsyncArtifactListener(Map<ResolvableArtifact, TransformArtifactOperation> artifactResults, BuildOperationQueue<RunnableBuildOperation> actions, ArtifactTransformer transform, AsyncArtifactListener listener, Map<File, TransformFileOperation> fileResults) {
                 this.artifactResults = artifactResults;
                 this.actions = actions;
                 this.transform = transform;
@@ -172,7 +171,11 @@ public class DefaultArtifactTransforms implements ArtifactTransforms {
             public void artifactAvailable(ResolvableArtifact artifact) {
                 TransformArtifactOperation operation = new TransformArtifactOperation(artifact, transform);
                 artifactResults.put(artifact, operation);
-                actions.add(operation);
+                if (transform.hasCachedResult(artifact.getFile())) {
+                    operation.run(null);
+                } else {
+                    actions.add(operation);
+                }
             }
 
             @Override
@@ -190,7 +193,11 @@ public class DefaultArtifactTransforms implements ArtifactTransforms {
             public void fileAvailable(File file) {
                 TransformFileOperation operation = new TransformFileOperation(file, transform);
                 fileResults.put(file, operation);
-                actions.add(operation);
+                if (transform.hasCachedResult(file)) {
+                    operation.run(null);
+                } else {
+                    actions.add(operation);
+                }
             }
         }
 
@@ -214,11 +221,11 @@ public class DefaultArtifactTransforms implements ArtifactTransforms {
 
     private static class TransformArtifactOperation implements RunnableBuildOperation {
         private final ResolvableArtifact artifact;
-        private final Transformer<List<File>, File> transform;
+        private final ArtifactTransformer transform;
         private Throwable failure;
         private List<File> result;
 
-        TransformArtifactOperation(ResolvableArtifact artifact, Transformer<List<File>, File> transform) {
+        TransformArtifactOperation(ResolvableArtifact artifact, ArtifactTransformer transform) {
             this.artifact = artifact;
             this.transform = transform;
         }
@@ -234,17 +241,17 @@ public class DefaultArtifactTransforms implements ArtifactTransforms {
 
         @Override
         public BuildOperationDescriptor.Builder description() {
-           return BuildOperationDescriptor.displayName("Apply " + transform + " to " + artifact);
+            return BuildOperationDescriptor.displayName("Apply " + transform.getDisplayName() + " to " + artifact);
         }
     }
 
     private static class TransformFileOperation implements RunnableBuildOperation {
         private final File file;
-        private final Transformer<List<File>, File> transform;
+        private final ArtifactTransformer transform;
         private Throwable failure;
         private List<File> result;
 
-        TransformFileOperation(File file, Transformer<List<File>, File> transform) {
+        TransformFileOperation(File file, ArtifactTransformer transform) {
             this.file = file;
             this.transform = transform;
         }
@@ -259,7 +266,7 @@ public class DefaultArtifactTransforms implements ArtifactTransforms {
         }
         @Override
         public BuildOperationDescriptor.Builder description() {
-            return BuildOperationDescriptor.displayName("Apply " + transform + " to " + file);
+            return BuildOperationDescriptor.displayName("Apply " + transform.getDisplayName() + " to " + file);
         }
     }
 
